@@ -73,7 +73,7 @@ jobs:
           NODEGROUP_NAME="${CLUSTER_NAME}-nodes"
           REGION="${{ secrets.AWS_REGION }}"
 
-          echo "=== Resolving AZs ==="
+          # Resolve AZs
           AZ_CSV=$(aws ec2 describe-availability-zones \
             --region $REGION \
             --filters "Name=state,Values=available" \
@@ -81,50 +81,50 @@ jobs:
             --output text | tr '\t' ',' | sed 's/,$//')
           echo "AZs: [$AZ_CSV]"
 
-          echo "=== Resolving instance types ==="
-          ALL_TYPES=$(aws ec2 describe-instance-type-offerings \
-            --location-type availability-zone \
-            --region $REGION \
-            --query 'InstanceTypeOfferings[].InstanceType' \
-            --output text | tr '\t' '\n' | sort -u)
+          # Convert to YAML list format
+          AZ_YAML=$(echo $AZ_CSV | tr ',' '\n' | sed 's/^/    - /')
+          echo "AZ YAML:"
+          echo "$AZ_YAML"
 
-          # Try preferred spot-friendly types first, fall back broadly
-          SELECTED=$(echo "$ALL_TYPES" | grep -E \
-            '^(t3|t3a|m5|m6i|m6a|c5|c6i|c6a)\.(medium|large|xlarge)$' \
-            | head -4 | tr '\n' ',' | sed 's/,$//')
+          # Write eksctl config file
+          cat > cluster.yaml <<EOF
+          apiVersion: eksctl.io/v1alpha5
+          kind: ClusterConfig
 
-          # Fallback: pick any 4 available types if preferred list is empty
-          if [ -z "$SELECTED" ]; then
-            echo "Preferred types not found, falling back to any available types..."
-            SELECTED=$(echo "$ALL_TYPES" | grep -E '\.(medium|large)$' \
-              | head -4 | tr '\n' ',' | sed 's/,$//')
-          fi
+          metadata:
+            name: ${CLUSTER_NAME}
+            region: ${REGION}
+            version: "1.29"
 
-          echo "Selected instance types: [$SELECTED]"
+          availabilityZones:
+          $(echo $AZ_CSV | tr ',' '\n' | sed 's/^/  - /')
 
-          if [ -z "$AZ_CSV" ] || [ -z "$SELECTED" ]; then
-            echo "ERROR: Could not resolve AZs or instance types."
-            echo "AZ_CSV=$AZ_CSV"
-            echo "SELECTED=$SELECTED"
-            exit 1
-          fi
+          managedNodeGroups:
+            - name: ${NODEGROUP_NAME}
+              instanceTypes:
+                - c5.large
+                - c5.xlarge
+                - c6a.large
+                - c6a.xlarge
+              availabilityZones:
+          $(echo $AZ_CSV | tr ',' '\n' | sed 's/^/        - /')
+              minSize: 1
+              maxSize: 4
+              desiredCapacity: 2
+              spot: true
+              labels:
+                lifecycle: spot
+              iam:
+                withAddonPolicies:
+                  autoScaler: true
+                  imageBuilder: true
+          EOF
+
+          echo "=== cluster.yaml ==="
+          cat cluster.yaml
 
           echo "=== Creating cluster ==="
-          eksctl create cluster \
-            --name $CLUSTER_NAME \
-            --region $REGION \
-            --zones "$AZ_CSV" \
-            --version 1.34 \
-            --managed \
-            --nodegroup-name $NODEGROUP_NAME \
-            --node-type "$SELECTED" \
-            --nodes 2 \
-            --nodes-min 1 \
-            --nodes-max 4 \
-            --spot \
-            --node-labels lifecycle=spot \
-            --asg-access \
-            --full-ecr-access
+          eksctl create cluster -f cluster.yaml
 
       # 7. Update kubeconfig
       - name: Update kubeconfig
