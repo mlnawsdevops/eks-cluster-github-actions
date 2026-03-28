@@ -11,9 +11,8 @@ on:
         description: 'Delete cluster after run?'
         required: true
         default: 'true'
-
 env:
-  FORCE_JAVASCRIPT_ACTIONS_TO_NODE24: true
+  FORCE_JAVASCRIPT_ACTIONS_TO_NODE24: 'true'
 
 jobs:
   cluster:
@@ -21,11 +20,11 @@ jobs:
     steps:
       # 1. Checkout branch
       - name: Checkout branch
-        uses: actions/checkout@v4.2.2
+        uses: actions/checkout@v4.2.2  # or latest tag supporting Node 24
 
       # 2. Configure AWS credentials
       - name: Configure AWS credentials
-        uses: aws-actions/configure-aws-credentials@v4.1.0
+        uses: aws-actions/configure-aws-credentials@v4.1.0  # supports Node 24
         with:
           aws-access-key-id: ${{ secrets.AWS_ACCESS_KEY_ID }}
           aws-secret-access-key: ${{ secrets.AWS_SECRET_ACCESS_KEY }}
@@ -46,77 +45,43 @@ jobs:
           sudo mv kubectl /usr/local/bin/
           kubectl version --client
 
-      # 5. Create EKS Cluster
-      - name: Create EKS Cluster
+      # 5. Create EKS Cluster with Spot Nodes + Optional Custom AMI
+      - name: Create EKS Cluster Inline
         run: |
           CLUSTER_NAME="${{ github.event.inputs.cluster_name }}"
           NODEGROUP_NAME="${CLUSTER_NAME}-nodes"
           REGION="${{ secrets.AWS_REGION }}"
-
-          # Resolve AZs
-          AZ_CSV=$(aws ec2 describe-availability-zones \
+          eksctl create cluster \
+            --name $CLUSTER_NAME \
             --region $REGION \
-            --filters "Name=state,Values=available" \
-            --query 'AvailabilityZones[].ZoneName' \
-            --output text | tr '\t' ',' | sed 's/,$//')
-          echo "AZs: [$AZ_CSV]"
-
-          # Write eksctl config file
-          cat > cluster.yaml <<EOF
-          apiVersion: eksctl.io/v1alpha5
-          kind: ClusterConfig
-
-          metadata:
-            name: ${CLUSTER_NAME}
-            region: ${REGION}
-            version: "1.32"
-
-          availabilityZones:
-          $(echo $AZ_CSV | tr ',' '\n' | sed 's/^/  - /')
-
-          managedNodeGroups:
-            - name: ${NODEGROUP_NAME}
-              instanceTypes:
-                - c5.large
-                - c5.xlarge
-                - c6a.large
-                - c6a.xlarge
-              availabilityZones:
-          $(echo $AZ_CSV | tr ',' '\n' | sed 's/^/        - /')
-              minSize: 1
-              maxSize: 4
-              desiredCapacity: 2
-              spot: true
-              labels:
-                lifecycle: spot
-              iam:
-                withAddonPolicies:
-                  autoScaler: true
-                  imageBuilder: true
-          EOF
-
-          echo "=== cluster.yaml ==="
-          cat cluster.yaml
-
-          echo "=== Creating cluster ==="
-          eksctl create cluster -f cluster.yaml
+            --version 1.32 \
+            --managed \
+            --nodegroup-name $NODEGROUP_NAME \
+            --node-type m5.large,c5.large \
+            --nodes 2 \
+            --nodes-min 1 \
+            --nodes-max 4 \
+            --spot \
+            --zones us-east-1a,us-east-1b,us-east-1c,us-east-1f \
+            --asg-access \
+            --full-ecr-access \
+            
 
       # 6. Update kubeconfig
       - name: Update kubeconfig
         run: |
-          aws eks update-kubeconfig \
-            --name ${{ github.event.inputs.cluster_name }} \
-            --region ${{ secrets.AWS_REGION }}
+          aws eks update-kubeconfig --name ${{ github.event.inputs.cluster_name }} --region ${{ secrets.AWS_REGION }}
 
-      # 7. Taint spot nodes
-      - name: Taint spot nodes
-        run: |
-          kubectl get nodes -l lifecycle=spot -o name | \
-            xargs -I {} kubectl taint nodes {} spot=true:NoSchedule --overwrite
-
-      # 8. Verify nodes
+      # 7. Verify nodes
       - name: Verify nodes
         run: |
           kubectl get nodes
-          echo "--- Node taints ---"
-          kubectl get nodes \
+
+      # 8. Delete cluster (optional)
+      - name: Delete EKS Cluster
+        if: ${{ github.event.inputs.delete_cluster == 'true' }}
+        run: |
+          CLUSTER_NAME="${{ github.event.inputs.cluster_name }}"
+          REGION="${{ secrets.AWS_REGION }}"
+          echo "Deleting EKS cluster $CLUSTER_NAME..."
+          eksctl delete cluster --name $CLUSTER_NAME --region $REGION
