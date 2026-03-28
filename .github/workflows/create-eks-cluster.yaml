@@ -65,7 +65,7 @@ jobs:
             --zones us-east-1a,us-east-1b,us-east-1c,us-east-1f \
             --asg-access \
             --full-ecr-access \
-            --verbose  # Added for debug output
+            --verbose  
 
       # 6. Update kubeconfig
       - name: Update kubeconfig
