@@ -6,21 +6,21 @@ on:
       cluster_name:
         description: 'Cluster name'
         required: true
-        default: 'expense-dev' # cluster-name
+        default: 'expense-dev'
       delete_cluster:
         description: 'Delete cluster after run?'
         required: true
-        type: boolean
+        default: 'true'
 
 jobs:
   cluster:
     runs-on: ubuntu-latest
     steps:
-      # Checkout code
+      # 1. Checkout branch
       - name: Checkout branch
         uses: actions/checkout@v4
 
-      # Configure AWS Credentials
+      # 2. Configure AWS credentials
       - name: Configure AWS credentials
         uses: aws-actions/configure-aws-credentials@v4
         with:
@@ -28,14 +28,14 @@ jobs:
           aws-secret-access-key: ${{ secrets.AWS_SECRET_ACCESS_KEY }}
           aws-region: ${{ secrets.AWS_REGION }}
 
-      # Install eksctl
+      # 3. Install eksctl
       - name: Install eksctl
         run: |
           curl --silent --location "https://github.com/weaveworks/eksctl/releases/latest/download/eksctl_$(uname -s)_amd64.tar.gz" | tar xz -C /tmp
           sudo mv /tmp/eksctl /usr/local/bin
           eksctl version
 
-      # Install kubectl
+      # 4. Install kubectl
       - name: Install kubectl
         run: |
           curl -LO "https://dl.k8s.io/release/$(curl -L -s https://dl.k8s.io/release/stable.txt)/bin/linux/amd64/kubectl"
@@ -43,13 +43,13 @@ jobs:
           sudo mv kubectl /usr/local/bin/
           kubectl version --client
 
-      # Create EKS Cluster with Spot Nodes and Custom AMI
-      - name: Create EKS Cluster Inline     
+      # 5. Create EKS Cluster with Spot Nodes + Optional Custom AMI
+      - name: Create EKS Cluster Inline
         run: |
           CLUSTER_NAME="${{ github.event.inputs.cluster_name }}"
           NODEGROUP_NAME="${CLUSTER_NAME}-nodes"
           REGION="${{ secrets.AWS_REGION }}"
-          CUSTOM_AMI="ami-0220d79f3f480ecf5"
+          CUSTOM_AMI="ami-0220d79f3f480ecf5"  # Optional: Replace with your custom AMI
 
           eksctl create cluster \
             --name $CLUSTER_NAME \
@@ -68,19 +68,21 @@ jobs:
             --asg-access \
             --full-ecr-access
 
-      # Update kubeconfig
+      # 6. Update kubeconfig
       - name: Update kubeconfig
         run: |
-          aws eks update-kubeconfig --name $CLUSTER_NAME --region ${{ secrets.AWS_REGION }}
+          aws eks update-kubeconfig --name ${{ github.event.inputs.cluster_name }} --region ${{ secrets.AWS_REGION }}
 
-      # Verify nodes
+      # 7. Verify nodes
       - name: Verify nodes
         run: |
           kubectl get nodes
 
-      # Delete cluster (optional)
+      # 8. Delete cluster (optional)
       - name: Delete EKS Cluster
         if: ${{ github.event.inputs.delete_cluster == 'true' }}
         run: |
+          CLUSTER_NAME="${{ github.event.inputs.cluster_name }}"
+          REGION="${{ secrets.AWS_REGION }}"
           echo "Deleting EKS cluster $CLUSTER_NAME..."
-          eksctl delete cluster --name $CLUSTER_NAME --region ${{ secrets.AWS_REGION }}
+          eksctl delete cluster --name $CLUSTER_NAME --region $REGION
