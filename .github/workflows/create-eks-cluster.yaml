@@ -1,5 +1,12 @@
 name: eks-cluster
-on: [push]
+on: 
+  workflow_dispatch:
+    inputs:
+      delete_cluster:
+        description: 'Delete cluster after run?'
+        required: true
+        default: 'true'
+
 jobs:
   cluster:
     runs-on: ubuntu-latest
@@ -59,3 +66,12 @@ jobs:
       - name: Verify nodes
         run: |
           kubectl get nodes
+
+      # 8. Delete cluster (optional)
+      - name: Delete EKS Cluster
+        if: ${{ github.event.inputs.delete_cluster == 'true' }}
+        run: |
+          CLUSTER_NAME="expense-dev"
+          REGION="${{ secrets.AWS_REGION }}"
+          echo "Deleting EKS cluster $CLUSTER_NAME..."
+          eksctl delete cluster --name $CLUSTER_NAME --region $REGION
