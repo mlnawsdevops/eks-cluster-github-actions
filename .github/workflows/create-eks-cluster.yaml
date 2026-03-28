@@ -51,20 +51,50 @@ jobs:
           CLUSTER_NAME="${{ github.event.inputs.cluster_name }}"
           NODEGROUP_NAME="${CLUSTER_NAME}-nodes"
           REGION="${{ secrets.AWS_REGION }}"
+
+          echo "=== Region: $REGION ==="
+
+          # Get AZs
+          AZ_CSV=$(aws ec2 describe-availability-zones \
+            --region $REGION \
+            --filters "Name=state,Values=available" \
+            --query 'AvailabilityZones[].ZoneName' \
+            --output text | tr '\t' ',' | sed 's/,$//')
+          echo "=== AZ_CSV: [$AZ_CSV] ==="
+
+          # Get instance types available in region
+          INSTANCE_TYPES=$(aws ec2 describe-instance-type-offerings \
+            --location-type availability-zone \
+            --region $REGION \
+            --query 'InstanceTypeOfferings[].InstanceType' \
+            --output text | tr '\t' '\n' | sort -u)
+          echo "=== All available instance types ==="
+          echo "$INSTANCE_TYPES"
+
+          # Pick 2 safe ones from the list
+          SELECTED=$(echo "$INSTANCE_TYPES" | grep -E '^(t3|t3a|m5|m6i|c5|c6i)\.(medium|large|xlarge)$' | head -2 | tr '\n' ',' | sed 's/,$//')
+          echo "=== SELECTED: [$SELECTED] ==="
+
+          # Fail early if nothing found
+          if [ -z "$AZ_CSV" ] || [ -z "$SELECTED" ]; then
+            echo "ERROR: Could not resolve AZs or instance types. Aborting."
+            exit 1
+          fi
+
           eksctl create cluster \
             --name $CLUSTER_NAME \
             --region $REGION \
-            --version 1.34 \
+            --zones $AZ_CSV \
+            --version 1.29 \
             --managed \
             --nodegroup-name $NODEGROUP_NAME \
-            --node-type m5.large,c5.large \
+            --node-type $SELECTED \
             --nodes 2 \
             --nodes-min 1 \
             --nodes-max 4 \
             --spot \
-            --zones us-east-1a,us-east-1b,us-east-1c,us-east-1f \
             --asg-access \
-            --full-ecr-access \
+            --full-ecr-access
             
 
       # 6. Update kubeconfig
