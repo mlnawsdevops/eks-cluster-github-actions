@@ -44,18 +44,15 @@ jobs:
       # 3. Install eksctl
       - name: Install eksctl
         run: |
-          ARCH=amd64
-          PLATFORM=$(uname -s)_$ARCH
-
           curl --silent --fail --location \
-            "https://github.com/eksctl-io/eksctl/releases/latest/download/eksctl_${PLATFORM}.tar.gz" \
-            -o eksctl.tar.gz
+            "https://github.com/eksctl-io/eksctl/releases/latest/download/eksctl_Linux_amd64.tar.gz" \
+            -o /tmp/eksctl.tar.gz
 
-          tar -xzf eksctl.tar.gz -C /tmp
+          tar -xzf /tmp/eksctl.tar.gz -C /tmp
           sudo mv /tmp/eksctl /usr/local/bin
-          rm eksctl.tar.gz
+          rm /tmp/eksctl.tar.gz
           eksctl version
-          
+
       - name: Install kubectl
         run: |
           # Downloads the binary matching the specific requested version to avoid skew
