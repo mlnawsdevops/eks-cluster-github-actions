@@ -16,8 +16,46 @@ jobs:
 
       - name: Install eksctl
         run: |
-          curl --silent --location "https://github.com/weaveworks/eksctl/releases/latest/download/eksctl_$(uname -s)_amd64.tar.gz | tar xz -C /tmp"
+          curl --silent --location "https://github.com/weaveworks/eksctl/releases/latest/download/eksctl_$(uname -s)_amd64.tar.gz" | tar xz -C /tmp
           sudo mv /tmp/eksctl /usr/local/bin
+          eksctl version
 
       - name: Install kubectl
-        uses: eksctl version
+        run: |
+          curl -LO "https://dl.k8s.io/release/$(curl -L -s https://dl.k8s.io/release/stable.txt)/bin/linux/amd64/kubectl"
+          chmod +x kubectl
+          sudo mv kubectl /usr/local/bin/
+          kubectl version --client
+
+      # 5. Create EKS Cluster with Spot Nodes (Inline)
+      - name: Create EKS Cluster Inline
+        run: |
+          CLUSTER_NAME="expense-dev"
+          NODEGROUP_NAME="expense-dev-nodes"
+          REGION="${{ secrets.AWS_REGION }}"
+
+          eksctl create cluster \    
+          --name $CLUSTER_NAME \
+          --region $REGION \
+          --version 1.29 \
+          --managed \
+          --nodegroup-name $NODEGROUP_NAME \
+          --node-type m5.large,c3.large,c4.large,c5.large \   # ✅ Multiple instance types
+          --nodes 2 \
+          --nodes-min 1 \
+          --nodes-max 4 \
+          --spot \
+          --node-labels lifecycle=spot \
+          --node-taints spot=true:NoSchedule \
+          --asg-access \
+          --full-ecr-access
+
+      # 6. Update kubeconfig
+      - name: Update kubeconfig
+        run: |
+          aws eks update-kubeconfig --name expense-dev --region ${{ secrets.AWS_REGION }}
+
+      # 7. Verify nodes
+      - name: Verify nodes
+        run: |
+          kubectl get nodes
