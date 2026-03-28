@@ -41,7 +41,7 @@ jobs:
           aws-secret-access-key: ${{ secrets.AWS_SECRET_ACCESS_KEY }}
           aws-region: ${{ inputs.region }}
 
-            - name: Install eksctl (Official Source)
+      - name: Install eksctl (Official Source)
         run: |
           # 1. Define the correct architecture and platform
           # 'uname -s' gives 'Linux', 'uname -m' gives 'x86_64' which we map to 'amd64'
