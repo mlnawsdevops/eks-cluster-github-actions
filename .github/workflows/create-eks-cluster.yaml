@@ -82,7 +82,7 @@ jobs:
             echo "Cluster '$CLUSTER_NAME' already exists. Skipping creation..."
           else
             echo "Cluster not found. Starting creation..."
-            
+          fi
           eksctl create cluster \
             --name "$CLUSTER_NAME" \
             --nodegroup-name "$NODEGROUP_NAME" \
