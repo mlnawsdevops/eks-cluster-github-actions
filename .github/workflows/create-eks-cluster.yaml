@@ -20,11 +20,11 @@ jobs:
     steps:
       # 1. Checkout branch
       - name: Checkout branch
-        uses: actions/checkout@v4.2.2        # or latest tag supporting Node 24
+        uses: actions/checkout@v4.2.2  # or latest tag supporting Node 24
 
       # 2. Configure AWS credentials
       - name: Configure AWS credentials
-        uses: aws-actions/configure-aws-credentials@v4.1.0 # supports Node 24
+        uses: aws-actions/configure-aws-credentials@v4.1.0  # supports Node 24
         with:
           aws-access-key-id: ${{ secrets.AWS_ACCESS_KEY_ID }}
           aws-secret-access-key: ${{ secrets.AWS_SECRET_ACCESS_KEY }}
@@ -62,10 +62,10 @@ jobs:
             --nodes-min 1 \
             --nodes-max 4 \
             --spot \
-            --zones us-east-1a,us-east-1b,us-east-1c \
+            --zones us-east-1a,us-east-1b,us-east-1c,us-east-1f \
             --asg-access \
-            --full-ecr-access
-            --verbose
+            --full-ecr-access \
+            --verbose  # Added for debug output
 
       # 6. Update kubeconfig
       - name: Update kubeconfig
