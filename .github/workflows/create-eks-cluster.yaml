@@ -1,4 +1,4 @@
-name: eks-cluster
+name: Create EKS Cluster
 
 on:
   workflow_dispatch:
@@ -7,81 +7,81 @@ on:
         description: 'Cluster name'
         required: true
         default: 'expense-dev'
+      region:
+        description: 'AWS Region'
+        required: true
+        default: 'us-east-1'
+      k8s_version:
+        description: 'Kubernetes Version'
+        required: true
+        default: '1.34'
       delete_cluster:
         description: 'Delete cluster after run?'
-        required: true
-        default: 'true'
+        type: boolean
+        default: true
+
 env:
   FORCE_JAVASCRIPT_ACTIONS_TO_NODE24: 'true'
 
+permissions:
+  id-token: write # Required for OIDC (if you switch from keys later)
+  contents: read
+
 jobs:
-  cluster:
+  cluster-lifecycle:
     runs-on: ubuntu-latest
     steps:
-      # 1. Checkout branch
       - name: Checkout branch
-        uses: actions/checkout@v4.2.2  # or latest tag supporting Node 24
+        uses: actions/checkout@v4
 
-      # 2. Configure AWS credentials
       - name: Configure AWS credentials
-        uses: aws-actions/configure-aws-credentials@v4.1.0  # supports Node 24
+        uses: aws-actions/configure-aws-credentials@v4
         with:
           aws-access-key-id: ${{ secrets.AWS_ACCESS_KEY_ID }}
           aws-secret-access-key: ${{ secrets.AWS_SECRET_ACCESS_KEY }}
-          aws-region: ${{ secrets.AWS_REGION }}
+          aws-region: ${{ inputs.region }}
 
-      # 3. Install eksctl
-      - name: Install eksctl
+      - name: Install eksctl (Official Source)
         run: |
-          curl --silent --location "https://github.com/weaveworks/eksctl/releases/latest/download/eksctl_$(uname -s)_amd64.tar.gz" | tar xz -C /tmp
+          # Using the new official eksctl-io organization
+          ARCH=amd64
+          PLATFORM=$(uname -s)_$ARCH
+          curl -sLO "https://github.com"
+          tar -xzf eksctl_$PLATFORM.tar.gz -C /tmp && rm eksctl_$PLATFORM.tar.gz
           sudo mv /tmp/eksctl /usr/local/bin
           eksctl version
 
-      # 4. Install kubectl
       - name: Install kubectl
         run: |
-          curl -LO "https://dl.k8s.io/release/$(curl -L -s https://dl.k8s.io/release/stable.txt)/bin/linux/amd64/kubectl"
+          # Downloads the binary matching the specific requested version to avoid skew
+          VERSION=$(curl -L -s https://dl.k8s.io)
+          curl -LO "https://dl.k8s.io"
           chmod +x kubectl
           sudo mv kubectl /usr/local/bin/
-          kubectl version --client
 
-      # 5. Create EKS Cluster with Spot Nodes + Optional Custom AMI
-      - name: Create EKS Cluster Inline
+      - name: Create EKS Cluster (Spot Instances)
         run: |
-          CLUSTER_NAME="${{ github.event.inputs.cluster_name }}"
-          NODEGROUP_NAME="${CLUSTER_NAME}-nodes"
-          REGION="${{ secrets.AWS_REGION }}"
           eksctl create cluster \
-            --name $CLUSTER_NAME \
-            --region $REGION \
-            --version 1.32 \
-            --managed \
-            --nodegroup-name $NODEGROUP_NAME \
-            --node-type m5.large,c5.large \
+            --name "${{ inputs.cluster_name }}" \
+            --region "${{ inputs.region }}" \
+            --version "${{ inputs.k8s_version }}" \
+            --nodegroup-name "spot-workers" \
+            --node-type m5.large,c5.large,m5a.large \
             --nodes 2 \
             --nodes-min 1 \
             --nodes-max 4 \
+            --managed \
             --spot \
-            --zones us-east-1a,us-east-1b,us-east-1c,us-east-1f \
-            --asg-access \
             --full-ecr-access \
-            
+            --asg-access
 
-      # 6. Update kubeconfig
-      - name: Update kubeconfig
+      - name: Verify Cluster Access
         run: |
-          aws eks update-kubeconfig --name ${{ github.event.inputs.cluster_name }} --region ${{ secrets.AWS_REGION }}
+          aws eks update-kubeconfig --name ${{ inputs.cluster_name }} --region ${{ inputs.region }}
+          kubectl get nodes -o wide
 
-      # 7. Verify nodes
-      - name: Verify nodes
+      - name: Delete Cluster (Conditional)
+        if: ${{ always() && inputs.delete_cluster == true }}
         run: |
-          kubectl get nodes
-
-      # 8. Delete cluster (optional)
-      - name: Delete EKS Cluster
-        if: ${{ github.event.inputs.delete_cluster == 'true' }}
-        run: |
-          CLUSTER_NAME="${{ github.event.inputs.cluster_name }}"
-          REGION="${{ secrets.AWS_REGION }}"
-          echo "Deleting EKS cluster $CLUSTER_NAME..."
-          eksctl delete cluster --name $CLUSTER_NAME --region $REGION
+          echo "Deleting cluster: ${{ inputs.cluster_name }}"
+          eksctl delete cluster --name ${{ inputs.cluster_name }} --region ${{ inputs.region }} --wait
