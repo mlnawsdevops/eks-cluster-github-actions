@@ -46,27 +46,7 @@ jobs:
           sudo mv kubectl /usr/local/bin/
           kubectl version --client
 
-      # 5. Debug region availability
-      - name: Debug region availability
-        run: |
-          REGION="${{ secrets.AWS_REGION }}"
-          echo "=== Region: $REGION ==="
-
-          echo "=== Availability Zones ==="
-          aws ec2 describe-availability-zones \
-            --region $REGION \
-            --filters "Name=state,Values=available" \
-            --query 'AvailabilityZones[].ZoneName' \
-            --output table
-
-          echo "=== Supported instance types (first 30) ==="
-          aws ec2 describe-instance-type-offerings \
-            --location-type availability-zone \
-            --region $REGION \
-            --query 'InstanceTypeOfferings[].InstanceType' \
-            --output text | tr '\t' '\n' | sort -u | head -30
-
-      # 6. Create EKS Cluster
+      # 5. Create EKS Cluster
       - name: Create EKS Cluster
         run: |
           CLUSTER_NAME="${{ github.event.inputs.cluster_name }}"
@@ -81,11 +61,6 @@ jobs:
             --output text | tr '\t' ',' | sed 's/,$//')
           echo "AZs: [$AZ_CSV]"
 
-          # Convert to YAML list format
-          AZ_YAML=$(echo $AZ_CSV | tr ',' '\n' | sed 's/^/    - /')
-          echo "AZ YAML:"
-          echo "$AZ_YAML"
-
           # Write eksctl config file
           cat > cluster.yaml <<EOF
           apiVersion: eksctl.io/v1alpha5
@@ -94,7 +69,7 @@ jobs:
           metadata:
             name: ${CLUSTER_NAME}
             region: ${REGION}
-            version: "1.29"
+            version: "1.32"
 
           availabilityZones:
           $(echo $AZ_CSV | tr ',' '\n' | sed 's/^/  - /')
@@ -126,32 +101,22 @@ jobs:
           echo "=== Creating cluster ==="
           eksctl create cluster -f cluster.yaml
 
-      # 7. Update kubeconfig
+      # 6. Update kubeconfig
       - name: Update kubeconfig
         run: |
           aws eks update-kubeconfig \
             --name ${{ github.event.inputs.cluster_name }} \
             --region ${{ secrets.AWS_REGION }}
 
-      # 8. Taint spot nodes
+      # 7. Taint spot nodes
       - name: Taint spot nodes
         run: |
           kubectl get nodes -l lifecycle=spot -o name | \
             xargs -I {} kubectl taint nodes {} spot=true:NoSchedule --overwrite
 
-      # 9. Verify nodes
+      # 8. Verify nodes
       - name: Verify nodes
         run: |
           kubectl get nodes
           echo "--- Node taints ---"
           kubectl get nodes \
-            -o custom-columns=NAME:.metadata.name,TAINTS:.spec.taints
-
-      # 10. Delete cluster (optional)
-      - name: Delete EKS Cluster
-        if: ${{ github.event.inputs.delete_cluster == 'true' }}
-        run: |
-          CLUSTER_NAME="${{ github.event.inputs.cluster_name }}"
-          REGION="${{ secrets.AWS_REGION }}"
-          echo "Deleting EKS cluster $CLUSTER_NAME..."
-          eksctl delete cluster --name $CLUSTER_NAME --region $REGION
