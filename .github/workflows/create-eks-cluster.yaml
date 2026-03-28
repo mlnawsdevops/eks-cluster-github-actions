@@ -11,8 +11,9 @@ on:
         description: 'Delete cluster after run?'
         required: true
         default: 'true'
+
 env:
-  FORCE_JAVASCRIPT_ACTIONS_TO_NODE24: 'true'
+  FORCE_JAVASCRIPT_ACTIONS_TO_NODE24: true
 
 jobs:
   cluster:
@@ -20,11 +21,11 @@ jobs:
     steps:
       # 1. Checkout branch
       - name: Checkout branch
-        uses: actions/checkout@v4.2.2  # or latest tag supporting Node 24
+        uses: actions/checkout@v4.2.2
 
       # 2. Configure AWS credentials
       - name: Configure AWS credentials
-        uses: aws-actions/configure-aws-credentials@v4.1.0  # supports Node 24
+        uses: aws-actions/configure-aws-credentials@v4.1.0
         with:
           aws-access-key-id: ${{ secrets.AWS_ACCESS_KEY_ID }}
           aws-secret-access-key: ${{ secrets.AWS_SECRET_ACCESS_KEY }}
@@ -45,47 +46,75 @@ jobs:
           sudo mv kubectl /usr/local/bin/
           kubectl version --client
 
-      # 5. Create EKS Cluster with Spot Nodes + Optional Custom AMI
-      - name: Create EKS Cluster Inline
+      # 5. Debug region availability
+      - name: Debug region availability
+        run: |
+          REGION="${{ secrets.AWS_REGION }}"
+          echo "=== Region: $REGION ==="
+
+          echo "=== Availability Zones ==="
+          aws ec2 describe-availability-zones \
+            --region $REGION \
+            --filters "Name=state,Values=available" \
+            --query 'AvailabilityZones[].ZoneName' \
+            --output table
+
+          echo "=== Supported instance types (first 30) ==="
+          aws ec2 describe-instance-type-offerings \
+            --location-type availability-zone \
+            --region $REGION \
+            --query 'InstanceTypeOfferings[].InstanceType' \
+            --output text | tr '\t' '\n' | sort -u | head -30
+
+      # 6. Create EKS Cluster
+      - name: Create EKS Cluster
         run: |
           CLUSTER_NAME="${{ github.event.inputs.cluster_name }}"
           NODEGROUP_NAME="${CLUSTER_NAME}-nodes"
           REGION="${{ secrets.AWS_REGION }}"
 
-          echo "=== Region: $REGION ==="
-
-          # Get AZs
+          echo "=== Resolving AZs ==="
           AZ_CSV=$(aws ec2 describe-availability-zones \
             --region $REGION \
             --filters "Name=state,Values=available" \
             --query 'AvailabilityZones[].ZoneName' \
             --output text | tr '\t' ',' | sed 's/,$//')
-          echo "=== AZ_CSV: [$AZ_CSV] ==="
+          echo "AZs: [$AZ_CSV]"
 
-          # Get instance types available in region
-          INSTANCE_TYPES=$(aws ec2 describe-instance-type-offerings \
+          echo "=== Resolving instance types ==="
+          ALL_TYPES=$(aws ec2 describe-instance-type-offerings \
             --location-type availability-zone \
             --region $REGION \
             --query 'InstanceTypeOfferings[].InstanceType' \
             --output text | tr '\t' '\n' | sort -u)
-          echo "=== All available instance types ==="
-          echo "$INSTANCE_TYPES"
 
-          # Pick 2 safe ones from the list
-          SELECTED=$(echo "$INSTANCE_TYPES" | grep -E '^(t3|t3a|m5|m6i|c5|c6i)\.(medium|large|xlarge)$' | head -2 | tr '\n' ',' | sed 's/,$//')
-          echo "=== SELECTED: [$SELECTED] ==="
+          # Try preferred spot-friendly types first, fall back broadly
+          SELECTED=$(echo "$ALL_TYPES" | grep -E \
+            '^(t3|t3a|m5|m6i|m6a|c5|c6i|c6a)\.(medium|large|xlarge)$' \
+            | head -4 | tr '\n' ',' | sed 's/,$//')
 
-          # Fail early if nothing found
+          # Fallback: pick any 4 available types if preferred list is empty
+          if [ -z "$SELECTED" ]; then
+            echo "Preferred types not found, falling back to any available types..."
+            SELECTED=$(echo "$ALL_TYPES" | grep -E '\.(medium|large)$' \
+              | head -4 | tr '\n' ',' | sed 's/,$//')
+          fi
+
+          echo "Selected instance types: [$SELECTED]"
+
           if [ -z "$AZ_CSV" ] || [ -z "$SELECTED" ]; then
-            echo "ERROR: Could not resolve AZs or instance types. Aborting."
+            echo "ERROR: Could not resolve AZs or instance types."
+            echo "AZ_CSV=$AZ_CSV"
+            echo "SELECTED=$SELECTED"
             exit 1
           fi
 
+          echo "=== Creating cluster ==="
           eksctl create cluster \
             --name $CLUSTER_NAME \
             --region $REGION \
             --zones $AZ_CSV \
-            --version 1.34 \
+            --version 1.29 \
             --managed \
             --nodegroup-name $NODEGROUP_NAME \
             --node-type $SELECTED \
@@ -93,21 +122,32 @@ jobs:
             --nodes-min 1 \
             --nodes-max 4 \
             --spot \
+            --node-labels lifecycle=spot \
             --asg-access \
             --full-ecr-access
-            
 
-      # 6. Update kubeconfig
+      # 7. Update kubeconfig
       - name: Update kubeconfig
         run: |
-          aws eks update-kubeconfig --name ${{ github.event.inputs.cluster_name }} --region ${{ secrets.AWS_REGION }}
+          aws eks update-kubeconfig \
+            --name ${{ github.event.inputs.cluster_name }} \
+            --region ${{ secrets.AWS_REGION }}
 
-      # 7. Verify nodes
+      # 8. Taint spot nodes
+      - name: Taint spot nodes
+        run: |
+          kubectl get nodes -l lifecycle=spot -o name | \
+            xargs -I {} kubectl taint nodes {} spot=true:NoSchedule --overwrite
+
+      # 9. Verify nodes
       - name: Verify nodes
         run: |
           kubectl get nodes
+          echo "--- Node taints ---"
+          kubectl get nodes \
+            -o custom-columns=NAME:.metadata.name,TAINTS:.spec.taints
 
-      # 8. Delete cluster (optional)
+      # 10. Delete cluster (optional)
       - name: Delete EKS Cluster
         if: ${{ github.event.inputs.delete_cluster == 'true' }}
         run: |
