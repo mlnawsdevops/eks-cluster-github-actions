@@ -73,5 +73,5 @@ jobs:
         run: |
           CLUSTER_NAME="expense-dev"
           REGION="${{ secrets.AWS_REGION }}"
-          echo "Deleting EKS cluster $CLUSTER_NAME..."
+          echo "Deleting EKS cluster $CLUSTER_NAME...."
           eksctl delete cluster --name $CLUSTER_NAME --region $REGION
