@@ -70,32 +70,80 @@ jobs:
           # 4. Verify installation
           kubectl version --client
 
-
-      - name: Create EKS Cluster
+            - name: Create EKS Cluster Inline
         run: |
           CLUSTER_NAME="${{ github.event.inputs.cluster_name }}"
           REGION="${{ secrets.AWS_REGION }}"
+          STACK_NAME="eksctl-$CLUSTER_NAME-cluster"
           NODEGROUP_NAME="${CLUSTER_NAME}-nodes"
 
-          # Check if the cluster already exists
-          if eksctl get cluster --name "$CLUSTER_NAME" --region "$REGION" > /dev/null 2>&1; then
-            echo "Cluster '$CLUSTER_NAME' already exists. Skipping creation..."
+          # 1. Check if the CloudFormation Stack exists
+          if aws cloudformation describe-stacks --stack-name "$STACK_NAME" --region "$REGION" > /dev/null 2>&1; then
+            
+            # 2. If it exists, check if the EKS Cluster is actually ACTIVE
+            if eksctl get cluster --name "$CLUSTER_NAME" --region "$REGION" > /dev/null 2>&1; then
+              echo "Cluster and Stack already exist and are healthy. Skipping..."
+            else
+              echo "Found a broken/incomplete Stack ($STACK_NAME). Deleting to allow fresh install..."
+              eksctl delete cluster --name "$CLUSTER_NAME" --region "$REGION" --wait
+              
+              echo "Starting fresh creation..."
+              eksctl create cluster \
+                --name "$CLUSTER_NAME" \
+                --region "$REGION" \
+                --version 1.31 \
+                --nodegroup-name "$NODEGROUP_NAME" \
+                --managed \
+                --instance-types t3.medium,t3.large,m5.large \
+                --nodes 2 \
+                --nodes-min 1 \
+                --nodes-max 4 \
+                --spot \
+                --asg-access \
+                --full-ecr-access
+            fi
           else
-            echo "Cluster not found. Starting creation..."
+            echo "No existing stack found. Starting creation..."
+            eksctl create cluster \
+              --name "$CLUSTER_NAME" \
+              --region "$REGION" \
+              --version 1.31 \
+              --nodegroup-name "$NODEGROUP_NAME" \
+              --managed \
+              --instance-types t3.medium,t3.large,m5.large \
+              --nodes 2 \
+              --nodes-min 1 \
+              --nodes-max 4 \
+              --spot \
+              --asg-access \
+              --full-ecr-access
           fi
-          eksctl create cluster \
-            --name "$CLUSTER_NAME" \
-            --nodegroup-name "$NODEGROUP_NAME" \
-            --region "$REGION" \
-            --version 1.31 \
-            --managed \
-            --instance-types t3.medium,t3.large,m5.large \
-            --nodes 2 \
-            --nodes-min 1 \
-            --nodes-max 4 \
-            --spot \
-            --asg-access \
-            --full-ecr-access
+
+      # - name: Create EKS Cluster
+      #   run: |
+      #     CLUSTER_NAME="${{ github.event.inputs.cluster_name }}"
+      #     REGION="${{ secrets.AWS_REGION }}"
+      #     NODEGROUP_NAME="${CLUSTER_NAME}-nodes"
+
+      #     # Check if the cluster already exists
+      #     if eksctl get cluster --name "$CLUSTER_NAME" --region "$REGION" > /dev/null 2>&1; then
+      #       echo "Cluster '$CLUSTER_NAME' already exists. Skipping creation..."
+      #     else
+      #       echo "Cluster not found. Starting creation..."
+      #     fi
+      #     eksctl create cluster \
+      #       --name "$CLUSTER_NAME" \
+      #       --nodegroup-name "$NODEGROUP_NAME" \
+      #       --region "$REGION" \
+      #       --version 1.31 \
+      #       --managed \
+      #       --instance-types t3.medium,t3.large,m5.large \
+      #       --nodes 2 \
+      #       --nodes-min 1 \
+      #       --nodes-max 4 \
+      #       --spot \
+      #       --asg-access \
+      #       --full-ecr-access
 
 
       - name: Verify Cluster Access
