@@ -70,7 +70,7 @@ jobs:
           # 4. Verify installation
           kubectl version --client
         
-      - name: Create EKS Cluster (Skip if exists)
+      - name: Create EKS Cluster
         run: |
           CLUSTER_NAME="${{ github.event.inputs.cluster_name }}"
           REGION="${{ secrets.AWS_REGION }}"
