@@ -77,6 +77,12 @@ jobs:
           REGION="${{ secrets.AWS_REGION }}"
           NODEGROUP_NAME="${CLUSTER_NAME}-nodes"
 
+          # Check if the cluster already exists
+          if eksctl get cluster --name "$CLUSTER_NAME" --region "$REGION" > /dev/null 2>&1; then
+            echo "Cluster '$CLUSTER_NAME' already exists. Skipping creation..."
+          else
+            echo "Cluster not found. Starting creation..."
+            
           eksctl create cluster \
             --name "$CLUSTER_NAME" \
             --nodegroup-name "$NODEGROUP_NAME" \
