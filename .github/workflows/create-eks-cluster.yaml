@@ -53,13 +53,23 @@ jobs:
           rm /tmp/eksctl.tar.gz
           eksctl version
 
+
+      # 4. Install kubectl
       - name: Install kubectl
         run: |
-          # Downloads the binary matching the specific requested version to avoid skew
-          VERSION=$(curl -L -s https://dl.k8s.io)
-          curl -LO "https://dl.k8s.io"
+          # 1. Get the latest stable version string
+          K8S_VERSION=$(curl -L -s https://dl.k8s.io/release/stable.txt)
+          
+          # 2. Download the binary for Linux amd64
+          curl -LO "https://dl.k8s.io/release/${K8S_VERSION}/bin/linux/amd64/kubectl"
+          
+          # 3. Make executable and move to PATH
           chmod +x kubectl
           sudo mv kubectl /usr/local/bin/
+          
+          # 4. Verify installation
+          kubectl version --client
+
 
       - name: Create EKS Cluster (Spot Instances)
         run: |
