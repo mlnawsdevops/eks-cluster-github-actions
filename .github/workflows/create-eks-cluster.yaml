@@ -51,8 +51,6 @@ jobs:
           CLUSTER_NAME="${{ github.event.inputs.cluster_name }}"
           NODEGROUP_NAME="${CLUSTER_NAME}-nodes"
           REGION="${{ secrets.AWS_REGION }}"
-          CUSTOM_AMI="ami-0220d79f3f480ecf5"  # Optional: Replace with your custom AMI
-
           eksctl create cluster \
             --name $CLUSTER_NAME \
             --region $REGION \
@@ -64,9 +62,6 @@ jobs:
             --nodes-min 1 \
             --nodes-max 4 \
             --spot \
-            --node-ami $CUSTOM_AMI \
-            --node-labels lifecycle=spot \
-            --node-taints spot=true:NoSchedule \
             --asg-access \
             --full-ecr-access
 
