@@ -62,6 +62,7 @@ jobs:
             --nodes-min 1 \
             --nodes-max 4 \
             --spot \
+            --zones us-east-1a,us-east-1b \
             --asg-access \
             --full-ecr-access
 
