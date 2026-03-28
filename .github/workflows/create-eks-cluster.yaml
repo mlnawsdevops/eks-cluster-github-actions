@@ -113,11 +113,11 @@ jobs:
           eksctl create cluster \
             --name $CLUSTER_NAME \
             --region $REGION \
-            --zones $AZ_CSV \
+            --zones "$AZ_CSV" \
             --version 1.34 \
             --managed \
             --nodegroup-name $NODEGROUP_NAME \
-            --node-type $SELECTED \
+            --node-type "$SELECTED" \
             --nodes 2 \
             --nodes-min 1 \
             --nodes-max 4 \
