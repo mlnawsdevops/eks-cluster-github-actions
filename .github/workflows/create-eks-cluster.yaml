@@ -71,21 +71,24 @@ jobs:
           kubectl version --client
 
 
-      - name: Create EKS Cluster (Spot Instances)
+      - name: Create EKS Cluster Inline
         run: |
+          CLUSTER_NAME="${{ github.event.inputs.cluster_name }}"
+          REGION="${{ secrets.AWS_REGION }}"
+          
           eksctl create cluster \
-            --name "${{ inputs.cluster_name }}" \
-            --region "${{ inputs.region }}" \
-            --version "${{ inputs.k8s_version }}" \
-            --nodegroup-name "spot-workers" \
-            --node-type m5.large,c5.large,m5a.large \
+            --name "$CLUSTER_NAME" \
+            --region "$REGION" \
+            --version 1.31 \
+            --managed \
+            --instance-types t3.medium,t3.large,m5.large \
             --nodes 2 \
             --nodes-min 1 \
             --nodes-max 4 \
-            --managed \
             --spot \
-            --full-ecr-access \
-            --asg-access
+            --asg-access \
+            --full-ecr-access
+
 
       - name: Verify Cluster Access
         run: |
