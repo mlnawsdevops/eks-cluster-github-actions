@@ -41,14 +41,23 @@ jobs:
           aws-secret-access-key: ${{ secrets.AWS_SECRET_ACCESS_KEY }}
           aws-region: ${{ inputs.region }}
 
-      - name: Install eksctl (Official Source)
+            - name: Install eksctl (Official Source)
         run: |
-          # Using the new official eksctl-io organization
-          ARCH=amd64
-          PLATFORM=$(uname -s)_$ARCH
-          curl -sLO "https://github.com"
-          tar -xzf eksctl_$PLATFORM.tar.gz -C /tmp && rm eksctl_$PLATFORM.tar.gz
+          # 1. Define the correct architecture and platform
+          # 'uname -s' gives 'Linux', 'uname -m' gives 'x86_64' which we map to 'amd64'
+          PLATFORM=$(uname -s)_amd64
+          
+          # 2. Download from the OFFICIAL eksctl-io repository
+          # --fail causes curl to exit with an error on 404 (instead of downloading an HTML error page)
+          echo "Downloading eksctl for $PLATFORM..."
+          curl --fail --silent --location "https://github.com/eksctl-io/eksctl/releases/latest/download/eksctl_$PLATFORM.tar.gz" -o /tmp/eksctl.tar.gz
+          
+          # 3. Extract and Install
+          tar -xzf /tmp/eksctl.tar.gz -C /tmp
           sudo mv /tmp/eksctl /usr/local/bin
+          
+          # 4. Verify Installation
+          echo "eksctl installed successfully:"
           eksctl version
 
       - name: Install kubectl
